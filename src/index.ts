@@ -1,0 +1,321 @@
+#!/usr/bin/env node
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
+  ListToolsRequestSchema,
+  CallToolRequestSchema,
+  ErrorCode,
+  McpError
+} from "@modelcontextprotocol/sdk/types.js";
+import axios from "axios";
+import dotenv from "dotenv";
+import {
+  UnomiProfile,
+  GetProfileArgs,
+  SearchProfilesArgs,
+  isValidGetProfileArgs,
+  isValidSearchProfilesArgs
+} from "./types.js";
+import fs from 'fs';
+
+// Create a simple logging function
+function log(message: string) {
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync('/Users/loom/temp/mcp-server.log', `${timestamp}: ${message}\n`);
+}
+
+// Use it in your code
+log('MCP server started');
+
+dotenv.config();
+
+const UNOMI_BASE_URL = process.env.UNOMI_BASE_URL || 'http://localhost:8181';
+const UNOMI_USERNAME = process.env.UNOMI_USERNAME;
+const UNOMI_PASSWORD = process.env.UNOMI_PASSWORD;
+
+if (!UNOMI_USERNAME || !UNOMI_PASSWORD) {
+  throw new Error("UNOMI_USERNAME and UNOMI_PASSWORD environment variables are required");
+}
+
+const API_CONFIG = {
+  BASE_URL: UNOMI_BASE_URL,
+  ENDPOINTS: {
+    PROFILE: '/cxs/profiles',
+    SEARCH: '/cxs/profiles/search'
+  }
+} as const;
+
+class UnomiServer {
+  private server: Server;
+  private axiosInstance;
+
+  constructor() {
+    this.server = new Server({
+      name: "unomi-profile-server",
+      version: "0.1.0"
+    }, {
+      capabilities: {
+        resources: {},
+        tools: {}
+      }
+    });
+
+    // Configure axios with defaults
+    this.axiosInstance = axios.create({
+      baseURL: API_CONFIG.BASE_URL,
+      auth: {
+        username: UNOMI_USERNAME!,
+        password: UNOMI_PASSWORD!
+      }
+    });
+
+    this.setupHandlers();
+    this.setupErrorHandling();
+  }
+
+  private setupErrorHandling(): void {
+    this.server.onerror = (error) => {
+      console.error("[MCP Error]", error);
+    };
+
+    process.on('SIGINT', async () => {
+      await this.server.close();
+      process.exit(0);
+    });
+  }
+
+  private setupHandlers(): void {
+    this.setupResourceHandlers();
+    this.setupToolHandlers();
+  }
+
+  private setupResourceHandlers(): void {
+    this.server.setRequestHandler(
+      ListResourcesRequestSchema,
+      async () => ({
+        resources: [{
+          uri: `unomi://profiles/list`,
+          name: `Unomi Profiles`,
+          mimeType: "application/json",
+          description: "List of available Apache Unomi profiles"
+        }]
+      })
+    );
+
+    this.server.setRequestHandler(
+      ReadResourceRequestSchema,
+      async (request) => {
+        log("Request:" + JSON.stringify(request, null, 2));
+        if (request.params.uri !== 'unomi://profiles/list') {
+          throw new McpError(
+            ErrorCode.InvalidRequest,
+            `Unknown resource: ${request.params.uri}`
+          );
+        }
+
+        try {
+          const response = await this.axiosInstance.post(
+            API_CONFIG.ENDPOINTS.SEARCH,
+            {
+              offset: 0,
+              limit: 10,
+              condition: {
+                type: "matchAllCondition"
+              }
+            }
+          );
+
+          return {
+            contents: [{
+              uri: request.params.uri,
+              mimeType: "application/json",
+              text: JSON.stringify(response.data, null, 2)
+            }]
+          };
+        } catch (error) {
+          if (axios.isAxiosError(error)) {
+            throw new McpError(
+              ErrorCode.InternalError,
+              `Unomi API error: ${error.response?.data?.message ?? error.message}`
+            );
+          }
+          throw error;
+        }
+      }
+    );
+  }
+
+  private setupToolHandlers(): void {
+    this.server.setRequestHandler(
+      ListToolsRequestSchema,
+      async () => ({
+        tools: [
+          {
+            name: "get_profile",
+            description: "Get a specific Unomi profile by ID",
+            inputSchema: {
+              type: "object",
+              properties: {
+                profileId: {
+                  type: "string",
+                  description: "Profile ID"
+                }
+              },
+              required: ["profileId"]
+            }
+          },
+          {
+            name: "search_profiles",
+            description: "Search Unomi profiles",
+            inputSchema: {
+              type: "object",
+              properties: {
+                query: {
+                  type: "string",
+                  description: "Search query"
+                },
+                limit: {
+                  type: "number",
+                  description: "Maximum number of results"
+                },
+                offset: {
+                  type: "number",
+                  description: "Result offset for pagination"
+                }
+              },
+              required: ["query"]
+            }
+          }
+        ]
+      })
+    );
+
+    this.server.setRequestHandler(
+      CallToolRequestSchema,
+      async (request) => {
+        log("Request:" + JSON.stringify(request, null, 2));
+        switch (request.params.name) {
+          case "get_profile": {
+            if (!isValidGetProfileArgs(request.params.arguments)) {
+              throw new McpError(
+                ErrorCode.InvalidParams,
+                "Invalid profile arguments"
+              );
+            }
+
+            try {
+              const response = await this.axiosInstance.get<UnomiProfile>(
+                `${API_CONFIG.ENDPOINTS.PROFILE}/${request.params.arguments.profileId}`
+              );
+
+              return {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify(response.data, null, 2)
+                }]
+              };
+            } catch (error) {
+              if (axios.isAxiosError(error)) {
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Unomi API error: ${error.response?.data?.message ?? error.message}`
+                  }],
+                  isError: true,
+                };
+              }
+              throw error;
+            }
+          }
+
+          case "search_profiles": {
+            if (!isValidSearchProfilesArgs(request.params.arguments)) {
+              throw new McpError(
+                ErrorCode.InvalidParams,
+                "Invalid search arguments"
+              );
+            }
+
+            try {
+              const { query, limit = 10, offset = 0 } = request.params.arguments;
+              const response = await this.axiosInstance.post(
+                API_CONFIG.ENDPOINTS.SEARCH,
+                {
+                  offset,
+                  limit,
+                  condition: {
+                    type: "booleanCondition",
+                    parameterValues : {
+                      operator: "or",
+                      subConditions: [
+                        {
+                          type: "profilePropertyCondition",
+                          parameterValues : {
+                            propertyName: "properties.firstName",
+                            comparisonOperator: "contains",
+                            propertyValue: query  
+                          }
+                        },
+                        {
+                          type: "profilePropertyCondition",
+                          parameterValues : {
+                            propertyName: "properties.lastName",
+                            comparisonOperator: "contains",
+                            propertyValue: query
+                          }
+                        },
+                        {
+                          type: "profilePropertyCondition",
+                          parameterValues : {
+                            propertyName: "properties.email",
+                            comparisonOperator: "contains",
+                            propertyValue: query
+                          }
+                        }
+                      ]  
+                    }
+                  }
+                }
+              );
+
+              return {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify(response.data, null, 2)
+                }]
+              };
+            } catch (error) {
+              if (axios.isAxiosError(error)) {
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Unomi API error: ${error.response?.data?.message ?? error.message}`
+                  }],
+                  isError: true,
+                };
+              }
+              throw error;
+            }
+          }
+
+          default:
+            throw new McpError(
+              ErrorCode.MethodNotFound,
+              `Unknown tool: ${request.params.name}`
+            );
+        }
+      }
+    );
+  }
+
+  async run(): Promise<void> {
+    const transport = new StdioServerTransport();
+    await this.server.connect(transport);
+    console.error("Unomi MCP server running on stdio");
+  }
+}
+
+const server = new UnomiServer();
+server.run().catch(console.error);
