@@ -13,10 +13,19 @@ import axios from "axios";
 import dotenv from "dotenv";
 import {
   UnomiProfile,
+  UnomiContext,
   GetProfileArgs,
   SearchProfilesArgs,
   isValidGetProfileArgs,
-  isValidSearchProfilesArgs
+  isValidSearchProfilesArgs,
+  GetMyProfileArgs,
+  isValidGetMyProfileArgs,
+  generateSessionId,
+  UpdateMyProfileArgs,
+  isValidUpdateMyProfileArgs,
+  UnomiScope,
+  CreateScopeArgs,
+  isValidCreateScopeArgs,
 } from "./types.js";
 import fs from 'fs';
 
@@ -34,22 +43,33 @@ dotenv.config();
 const UNOMI_BASE_URL = process.env.UNOMI_BASE_URL || 'http://localhost:8181';
 const UNOMI_USERNAME = process.env.UNOMI_USERNAME;
 const UNOMI_PASSWORD = process.env.UNOMI_PASSWORD;
+const UNOMI_PROFILE_ID = process.env.UNOMI_PROFILE_ID;
+const UNOMI_SOURCE_ID = process.env.UNOMI_SOURCE_ID || 'claude-desktop';
+const UNOMI_KEY = process.env.UNOMI_KEY;
 
 if (!UNOMI_USERNAME || !UNOMI_PASSWORD) {
   throw new Error("UNOMI_USERNAME and UNOMI_PASSWORD environment variables are required");
+}
+
+if (!UNOMI_KEY) {
+  throw new Error("UNOMI_KEY environment variable is required for protected events");
 }
 
 const API_CONFIG = {
   BASE_URL: UNOMI_BASE_URL,
   ENDPOINTS: {
     PROFILE: '/cxs/profiles',
-    SEARCH: '/cxs/profiles/search'
+    SEARCH: '/cxs/profiles/search',
+    SESSION: '/cxs/sessions',
+    CONTEXT: '/context.json',
+    SCOPE: '/cxs/scopes'
   }
 } as const;
 
 class UnomiServer {
   private server: Server;
   private axiosInstance;
+  private defaultScope = 'claude-desktop';
 
   constructor() {
     this.server = new Server({
@@ -68,6 +88,9 @@ class UnomiServer {
       auth: {
         username: UNOMI_USERNAME!,
         password: UNOMI_PASSWORD!
+      },
+      headers: {
+        'X-Unomi-Peer': UNOMI_KEY
       }
     });
 
@@ -147,11 +170,101 @@ class UnomiServer {
     );
   }
 
+  private async ensureScopeExists(scope: string = this.defaultScope): Promise<void> {
+    try {
+      // Try to get the scope
+      const response = await this.axiosInstance.get(`${API_CONFIG.ENDPOINTS.SCOPE}/${scope}`);
+      
+      // Check if scope doesn't exist (204 status or empty response)
+      if (response.status === 204 || !response.data || Object.keys(response.data).length === 0) {
+        // Create the scope
+        const scopeData: UnomiScope = {
+          itemId: scope,
+          itemType: 'scope',
+          metadata: {
+            id: scope,
+            name: `Claude Desktop Scope - ${scope}`,
+          description: 'Automatically created scope for Claude Desktop MCP Server',
+            scope: scope
+          }
+        };
+
+        await this.axiosInstance.post(API_CONFIG.ENDPOINTS.SCOPE, scopeData);
+      }
+      // If we get here with data, the scope exists
+    } catch (error) {
+      // Handle other potential errors
+      if (axios.isAxiosError(error)) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          `Failed to check/create scope: ${error.response?.data?.message ?? error.message}`
+        );
+      }
+      throw error;
+    }
+  }
+
   private setupToolHandlers(): void {
     this.server.setRequestHandler(
       ListToolsRequestSchema,
       async () => ({
         tools: [
+          {
+            name: "create_scope",
+            description: "Create a new Unomi scope",
+            inputSchema: {
+              type: "object",
+              properties: {
+                scope: {
+                  type: "string",
+                  description: "Scope identifier"
+                },
+                name: {
+                  type: "string",
+                  description: "Human-readable name for the scope"
+                },
+                description: {
+                  type: "string",
+                  description: "Description of the scope"
+                }
+              },
+              required: ["scope"]
+            }
+          },
+          {
+            name: "update_my_profile",
+            description: "Update properties of your profile using environment-provided ID",
+            inputSchema: {
+              type: "object",
+              properties: {
+                properties: {
+                  type: "object",
+                  description: "Key-value pairs of properties to update",
+                  additionalProperties: {
+                    type: ["string", "number", "boolean", "null"]
+                  }
+                }
+              },
+              required: ["properties"]
+            }
+          },
+          {
+            name: "get_my_profile",
+            description: "Get your profile using environment-provided IDs",
+            inputSchema: {
+              type: "object",
+              properties: {
+                requireSegments: {
+                  type: "boolean",
+                  description: "Whether to include segments in the response"
+                },
+                requireScores: {
+                  type: "boolean",
+                  description: "Whether to include scores in the response"
+                }
+              }
+            }
+          },
           {
             name: "get_profile",
             description: "Get a specific Unomi profile by ID",
@@ -197,6 +310,192 @@ class UnomiServer {
       async (request) => {
         log("Request:" + JSON.stringify(request, null, 2));
         switch (request.params.name) {
+          case "create_scope": {
+            if (!isValidCreateScopeArgs(request.params.arguments)) {
+              throw new McpError(
+                ErrorCode.InvalidParams,
+                "Invalid create scope arguments"
+              );
+            }
+
+            try {
+              const scopeData: UnomiScope = {
+                itemId: request.params.arguments.scope,
+                itemType: 'scope',
+                metadata : {
+                  id: request.params.arguments.scope,
+                  name: request.params.arguments.name,
+                  description: request.params.arguments.description,
+                  scope: request.params.arguments.scope
+                }
+              };
+
+              await this.axiosInstance.post(API_CONFIG.ENDPOINTS.SCOPE, scopeData);
+
+              return {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify({
+                    message: "Scope created successfully",
+                    scope: scopeData
+                  }, null, 2)
+                }]
+              };
+            } catch (error) {
+              if (axios.isAxiosError(error)) {
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Unomi API error: ${error.response?.data?.message ?? error.message}`
+                  }],
+                  isError: true,
+                };
+              }
+              throw error;
+            }
+          }
+
+          case "update_my_profile": {
+            // Ensure scope exists before updating profile
+            await this.ensureScopeExists();
+
+            if (!UNOMI_PROFILE_ID) {
+              throw new McpError(
+                ErrorCode.InvalidRequest,
+                "UNOMI_PROFILE_ID environment variable is required"
+              );
+            }
+
+            if (!isValidUpdateMyProfileArgs(request.params.arguments)) {
+              throw new McpError(
+                ErrorCode.InvalidParams,
+                "Invalid update profile arguments"
+              );
+            }
+
+            try {
+              const sessionId = generateSessionId(UNOMI_PROFILE_ID);
+              const contextData: UnomiContext = {
+                sessionId,
+                profileId: UNOMI_PROFILE_ID,
+                source: {
+                  itemId: UNOMI_SOURCE_ID,
+                  itemType: "claude",
+                  scope: "claude-desktop"
+                },
+                events: [{
+                  eventType: "updateProperties",
+                  scope: "claude-desktop",
+                  source: {
+                    itemId: UNOMI_SOURCE_ID,
+                    itemType: "claude",
+                    scope: "claude-desktop"
+                  },
+                  target: {
+                    itemId: UNOMI_PROFILE_ID,
+                    itemType: "profile",
+                    scope: "claude-desktop"
+                  },
+                  properties: request.params.arguments.properties
+                }]
+              };
+
+              const response = await this.axiosInstance.post(
+                API_CONFIG.ENDPOINTS.CONTEXT,
+                contextData
+              );
+
+              return {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify({
+                    message: "Profile properties updated successfully",
+                    updatedProperties: request.params.arguments.properties,
+                    profileId: UNOMI_PROFILE_ID,
+                    sessionId: sessionId
+                  }, null, 2)
+                }]
+              };
+            } catch (error) {
+              if (axios.isAxiosError(error)) {
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Unomi API error: ${error.response?.data?.message ?? error.message}`
+                  }],
+                  isError: true,
+                };
+              }
+              throw error;
+            }
+          }
+
+          case "get_my_profile": {
+            // Ensure scope exists before getting profile
+            await this.ensureScopeExists();
+
+            if (!UNOMI_PROFILE_ID) {
+              throw new McpError(
+                ErrorCode.InvalidRequest,
+                "UNOMI_PROFILE_ID environment variable is required"
+              );
+            }
+
+            if (!isValidGetMyProfileArgs(request.params.arguments)) {
+              throw new McpError(
+                ErrorCode.InvalidParams,
+                "Invalid get my profile arguments"
+              );
+            }
+
+            try {
+              const sessionId = generateSessionId(UNOMI_PROFILE_ID);
+              const contextData: UnomiContext = {
+                sessionId,
+                profileId: UNOMI_PROFILE_ID,
+                source: {
+                  itemId: UNOMI_SOURCE_ID,
+                  itemType: "claude",
+                  scope: "claude-desktop"
+                },
+                requiredProfileProperties: ["*"],
+                requiredSessionProperties: ["*"],
+                requireSegments: request.params.arguments.requireSegments,
+                requireScores: request.params.arguments.requireScores
+              };
+
+              const response = await this.axiosInstance.post(
+                API_CONFIG.ENDPOINTS.CONTEXT,
+                contextData
+              );
+
+              return {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify({
+                    profile: response.data.profileProperties,
+                    session: response.data.sessionProperties,
+                    segments: response.data.profileSegments,
+                    scores: response.data.profileScores,
+                    sessionId: sessionId,
+                    profileId: UNOMI_PROFILE_ID
+                  }, null, 2)
+                }]
+              };
+            } catch (error) {
+              if (axios.isAxiosError(error)) {
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Unomi API error: ${error.response?.data?.message ?? error.message}`
+                  }],
+                  isError: true,
+                };
+              }
+              throw error;
+            }
+          }
+
           case "get_profile": {
             if (!isValidGetProfileArgs(request.params.arguments)) {
               throw new McpError(
