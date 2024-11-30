@@ -88,7 +88,26 @@ UNOMI_PASSWORD=your-password
 UNOMI_PROFILE_ID=your-profile-id
 UNOMI_SOURCE_ID=your-source-id
 UNOMI_KEY=your-unomi-key
+UNOMI_EMAIL=your-email
 ```
+
+### Profile Resolution
+
+The server uses a two-step process to resolve the profile ID:
+
+1. Email Lookup (if `UNOMI_EMAIL` is set):
+   - Searches for a profile with matching email
+   - If found, uses that profile's ID
+   - Useful for maintaining consistent profile across sessions
+
+2. Fallback Profile ID:
+   - If email lookup fails or `UNOMI_EMAIL` is not set
+   - Uses the `UNOMI_PROFILE_ID` from environment
+   - Ensures a profile is always available
+
+The response will indicate which method was used via the `source` field:
+- `"email_lookup"`: Profile found via email
+- `"environment"`: Using fallback profile ID
 
 ### Unomi Server Configuration
 
@@ -144,7 +163,8 @@ On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
         "UNOMI_PASSWORD": "your-password",
         "UNOMI_PROFILE_ID": "your-profile-id",
         "UNOMI_SOURCE_ID": "claude-desktop",
-        "UNOMI_KEY": "your-unomi-key"
+        "UNOMI_KEY": "your-unomi-key",
+        "UNOMI_EMAIL": "your-email@example.com"
       }
     }
   }

@@ -46,6 +46,7 @@ const UNOMI_PASSWORD = process.env.UNOMI_PASSWORD;
 const UNOMI_PROFILE_ID = process.env.UNOMI_PROFILE_ID;
 const UNOMI_SOURCE_ID = process.env.UNOMI_SOURCE_ID || 'claude-desktop';
 const UNOMI_KEY = process.env.UNOMI_KEY;
+const UNOMI_EMAIL = process.env.UNOMI_EMAIL;
 
 if (!UNOMI_USERNAME || !UNOMI_PASSWORD) {
   throw new Error("UNOMI_USERNAME and UNOMI_PASSWORD environment variables are required");
@@ -53,6 +54,10 @@ if (!UNOMI_USERNAME || !UNOMI_PASSWORD) {
 
 if (!UNOMI_KEY) {
   throw new Error("UNOMI_KEY environment variable is required for protected events");
+}
+
+if (!UNOMI_PROFILE_ID) {
+  throw new Error("UNOMI_PROFILE_ID environment variable is required as fallback");
 }
 
 const API_CONFIG = {
@@ -202,6 +207,90 @@ class UnomiServer {
       }
       throw error;
     }
+  }
+
+  private async findProfileByEmail(email: string): Promise<string | null> {
+    try {
+      const response = await this.axiosInstance.post(
+        API_CONFIG.ENDPOINTS.SEARCH,
+        {
+          condition: {
+            type: "profilePropertyCondition",
+            parameterValues: {
+              propertyName: "properties.email",
+              comparisonOperator: "equals",
+              propertyValue: email
+            }
+          },
+          limit: 1
+        }
+      );
+
+      if (response.data && response.data.list && response.data.list.length > 0) {
+        return response.data.list[0].itemId;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error looking up profile by email:', error);
+      return null;
+    }
+  }
+
+  private async getEffectiveProfileId(): Promise<string> {
+    if (UNOMI_EMAIL) {
+      const existingProfileId = await this.findProfileByEmail(UNOMI_EMAIL);
+      if (existingProfileId) {
+        return existingProfileId;
+      }
+      // If profile not found by email, create it with the email property
+      const profileId = UNOMI_PROFILE_ID!;
+      try {
+        const sessionId = generateSessionId(profileId);
+        const contextData: UnomiContext = {
+          sessionId,
+          profileId,
+          source: {
+            itemId: UNOMI_SOURCE_ID,
+            itemType: "claude",
+            scope: "claude-desktop"
+          },
+          events: [{
+            eventType: "updateProperties",
+            scope: "claude-desktop",
+            source: {
+              itemId: UNOMI_SOURCE_ID,
+              itemType: "claude",
+              scope: "claude-desktop"
+            },
+            target: {
+              itemId: profileId,
+              itemType: "profile",
+              scope: "claude-desktop"
+            },
+            properties: {
+              update: {
+                "properties.email": UNOMI_EMAIL
+              }
+            }
+          }]
+        };
+
+        await this.axiosInstance.post(API_CONFIG.ENDPOINTS.CONTEXT, contextData);
+      } catch (error) {
+        console.error('Error setting email for new profile:', error);
+      }
+      return profileId;
+    }
+    return UNOMI_PROFILE_ID!;
+  }
+
+  private async handleMyProfileOperation<T>(
+    operation: (profileId: string, args: any) => Promise<T>, 
+    args: any
+  ): Promise<T> {
+    const profileId = await this.getEffectiveProfileId();
+    return operation(profileId, args);
   }
 
   private setupToolHandlers(): void {
@@ -356,15 +445,7 @@ class UnomiServer {
           }
 
           case "update_my_profile": {
-            // Ensure scope exists before updating profile
             await this.ensureScopeExists();
-
-            if (!UNOMI_PROFILE_ID) {
-              throw new McpError(
-                ErrorCode.InvalidRequest,
-                "UNOMI_PROFILE_ID environment variable is required"
-              );
-            }
 
             if (!isValidUpdateMyProfileArgs(request.params.arguments)) {
               throw new McpError(
@@ -373,73 +454,75 @@ class UnomiServer {
               );
             }
 
-            try {
-              const sessionId = generateSessionId(UNOMI_PROFILE_ID);
-              const contextData: UnomiContext = {
-                sessionId,
-                profileId: UNOMI_PROFILE_ID,
-                source: {
-                  itemId: UNOMI_SOURCE_ID,
-                  itemType: "claude",
-                  scope: "claude-desktop"
-                },
-                events: [{
-                  eventType: "updateProperties",
-                  scope: "claude-desktop",
+            const args = request.params.arguments;
+            return this.handleMyProfileOperation(async (profileId, args) => {
+              try {
+                const sessionId = generateSessionId(profileId);
+                const contextData: UnomiContext = {
+                  sessionId,
+                  profileId,
                   source: {
                     itemId: UNOMI_SOURCE_ID,
                     itemType: "claude",
                     scope: "claude-desktop"
                   },
-                  target: {
-                    itemId: UNOMI_PROFILE_ID,
-                    itemType: "profile",
-                    scope: "claude-desktop"
-                  },
-                  properties: request.params.arguments.properties
-                }]
-              };
+                  events: [{
+                    eventType: "updateProperties",
+                    scope: "claude-desktop",
+                    source: {
+                      itemId: UNOMI_SOURCE_ID,
+                      itemType: "claude",
+                      scope: "claude-desktop"
+                    },
+                    target: {
+                      itemId: profileId,
+                      itemType: "profile",
+                      scope: "claude-desktop"
+                    },
+                    properties: {
+                      update: Object.fromEntries(
+                        Object.entries(args.properties).map(([key, value]) => [
+                          `properties.${key}`, value
+                        ])
+                      )
+                    }
+                  }]
+                };
 
-              const response = await this.axiosInstance.post(
-                API_CONFIG.ENDPOINTS.CONTEXT,
-                contextData
-              );
+                const response = await this.axiosInstance.post(
+                  API_CONFIG.ENDPOINTS.CONTEXT,
+                  contextData
+                );
 
-              return {
-                content: [{
-                  type: "text",
-                  text: JSON.stringify({
-                    message: "Profile properties updated successfully",
-                    updatedProperties: request.params.arguments.properties,
-                    profileId: UNOMI_PROFILE_ID,
-                    sessionId: sessionId
-                  }, null, 2)
-                }]
-              };
-            } catch (error) {
-              if (axios.isAxiosError(error)) {
                 return {
                   content: [{
                     type: "text",
-                    text: `Unomi API error: ${error.response?.data?.message ?? error.message}`
-                  }],
-                  isError: true,
+                    text: JSON.stringify({
+                      message: "Profile properties updated successfully",
+                      updatedProperties: args.properties,
+                      profileId: profileId,
+                      sessionId: sessionId,
+                      source: UNOMI_EMAIL ? "email_lookup" : "environment"
+                    }, null, 2)
+                  }]
                 };
+              } catch (error) {
+                if (axios.isAxiosError(error)) {
+                  return {
+                    content: [{
+                      type: "text",
+                      text: `Unomi API error: ${error.response?.data?.message ?? error.message}`
+                    }],
+                    isError: true,
+                  };
+                }
+                throw error;
               }
-              throw error;
-            }
+            }, args);
           }
 
           case "get_my_profile": {
-            // Ensure scope exists before getting profile
             await this.ensureScopeExists();
-
-            if (!UNOMI_PROFILE_ID) {
-              throw new McpError(
-                ErrorCode.InvalidRequest,
-                "UNOMI_PROFILE_ID environment variable is required"
-              );
-            }
 
             if (!isValidGetMyProfileArgs(request.params.arguments)) {
               throw new McpError(
@@ -448,52 +531,56 @@ class UnomiServer {
               );
             }
 
-            try {
-              const sessionId = generateSessionId(UNOMI_PROFILE_ID);
-              const contextData: UnomiContext = {
-                sessionId,
-                profileId: UNOMI_PROFILE_ID,
-                source: {
-                  itemId: UNOMI_SOURCE_ID,
-                  itemType: "claude",
-                  scope: "claude-desktop"
-                },
-                requiredProfileProperties: ["*"],
-                requiredSessionProperties: ["*"],
-                requireSegments: request.params.arguments.requireSegments,
-                requireScores: request.params.arguments.requireScores
-              };
+            const args = request.params.arguments;
+            return this.handleMyProfileOperation(async (profileId, args) => {
+              try {
+                const sessionId = generateSessionId(profileId);
+                const contextData: UnomiContext = {
+                  sessionId,
+                  profileId,
+                  source: {
+                    itemId: UNOMI_SOURCE_ID,
+                    itemType: "claude",
+                    scope: "claude-desktop"
+                  },
+                  requiredProfileProperties: ["*"],
+                  requiredSessionProperties: ["*"],
+                  requireSegments: args.requireSegments,
+                  requireScores: args.requireScores
+                };
 
-              const response = await this.axiosInstance.post(
-                API_CONFIG.ENDPOINTS.CONTEXT,
-                contextData
-              );
+                const response = await this.axiosInstance.post(
+                  API_CONFIG.ENDPOINTS.CONTEXT,
+                  contextData
+                );
 
-              return {
-                content: [{
-                  type: "text",
-                  text: JSON.stringify({
-                    profile: response.data.profileProperties,
-                    session: response.data.sessionProperties,
-                    segments: response.data.profileSegments,
-                    scores: response.data.profileScores,
-                    sessionId: sessionId,
-                    profileId: UNOMI_PROFILE_ID
-                  }, null, 2)
-                }]
-              };
-            } catch (error) {
-              if (axios.isAxiosError(error)) {
                 return {
                   content: [{
                     type: "text",
-                    text: `Unomi API error: ${error.response?.data?.message ?? error.message}`
-                  }],
-                  isError: true,
+                    text: JSON.stringify({
+                      profile: response.data.profileProperties,
+                      session: response.data.sessionProperties,
+                      segments: response.data.profileSegments,
+                      scores: response.data.profileScores,
+                      sessionId: sessionId,
+                      profileId: profileId,
+                      source: UNOMI_EMAIL ? "email_lookup" : "environment"
+                    }, null, 2)
+                  }]
                 };
+              } catch (error) {
+                if (axios.isAxiosError(error)) {
+                  return {
+                    content: [{
+                      type: "text",
+                      text: `Unomi API error: ${error.response?.data?.message ?? error.message}`
+                    }],
+                    isError: true,
+                  };
+                }
+                throw error;
               }
-              throw error;
-            }
+            }, args);
           }
 
           case "get_profile": {
