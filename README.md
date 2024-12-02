@@ -1,13 +1,13 @@
-# Apache Unomi MCP Server
+# Inoyu Apache Unomi MCP Server
 
 A Model Context Protocol server enabling Claude to maintain user context through Apache Unomi profile management.
 
-> ⚠️ **Experimental Implementation Notice**
+> ⚠️ **Early Implementation Notice**
 >
-> This is an experimental implementation intended for demonstration purposes:
+> This is an early implementation intended for demonstration purposes:
 > - Not validated for production use
 > - Subject to changes
-> - Not officially supported
+> - Not (yet) officially supported
 > - For learning and experimentation only
 
 ## Current Scope
@@ -24,7 +24,7 @@ Other Unomi features (events, segments, session properties, etc.) are not curren
 
 Watch how the MCP server enables Claude to maintain context and manage user profiles:
 
-[![Apache Unomi MCP Server Demo](https://img.youtube.com/vi/UTMbWqimk0M/0.jpg)](https://www.youtube.com/watch?v=UTMbWqimk0M)
+[![Apache Unomi MCP Server Demo](https://img.youtube.com/vi/YqPkUhBlcrs/0.jpg)](https://www.youtube.com/watch?v=YqPkUhBlcrs)
 
 ## Features
 
@@ -106,28 +106,17 @@ This MCP server enables Claude to maintain context about users through Apache Un
 
 2. **Context Management**:
    - Store and retrieve user preferences
-   - Track user segments and scores
-   - Maintain conversation history and user properties
 
 3. **Integration Features**:
    - Seamless Claude Desktop integration
-   - Protected event handling
    - Automatic session management
    - Scope-based context isolation
 
 ### What You Can Do
 - Have Claude remember user preferences across conversations
 - Store and retrieve user-specific information
-- Track user interactions and behavior
 - Maintain consistent user context
 - Manage multiple users through email identification
-
-### What You Cannot Do
-- Create multiple sessions per day for the same profile
-- Modify protected events without proper Unomi key
-- Access profiles outside IP whitelist
-- Create custom session IDs (they're date-based)
-- Bypass Unomi's security mechanisms
 
 ### Prerequisites
 - Running Apache Unomi server
