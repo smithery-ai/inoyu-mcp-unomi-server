@@ -1,6 +1,98 @@
 # Apache Unomi MCP Server
 
-A Model Context Protocol server that provides seamless integration between Claude Desktop and Apache Unomi, enabling profile management and context-aware interactions.
+A Model Context Protocol server enabling Claude to maintain user context through Apache Unomi profile management.
+
+> ⚠️ **Experimental Implementation Notice**
+>
+> This is an experimental implementation intended for demonstration purposes:
+> - Not validated for production use
+> - Subject to changes
+> - Not officially supported
+> - For learning and experimentation only
+
+## Current Scope
+
+This implementation provides:
+- Profile lookup and creation using email
+- Profile property management
+- Basic session handling
+- Scope management for context isolation
+
+Other Unomi features (events, segments, session properties, etc.) are not currently implemented. Community feedback welcome on future development priorities.
+
+## Demo
+
+Watch how the MCP server enables Claude to maintain context and manage user profiles:
+
+[![Apache Unomi MCP Server Demo](https://img.youtube.com/vi/UTMbWqimk0M/0.jpg)](https://www.youtube.com/watch?v=UTMbWqimk0M)
+
+## Features
+
+### Profile Access
+- Email-based profile lookup with automatic creation
+- Profile properties, segments, and scores access
+- JSON format for all data exchange
+- Automatic session management with date-based IDs
+
+### Tools
+- `get_my_profile` - Get your profile using environment variables
+  - Uses UNOMI_PROFILE_ID from environment or email lookup
+  - Automatically generates a session ID based on the current date
+  - Optional parameters:
+    - requireSegments: Include segment information
+    - requireScores: Include scoring information
+- `update_my_profile` - Update properties of your profile
+  - Uses UNOMI_PROFILE_ID from environment or email lookup
+  - Takes a properties object with key-value pairs to update
+  - Supports string, number, boolean, and null values
+  - Example:
+    ```json
+    {
+      "properties": {
+        "firstName": "John",
+        "age": 30,
+        "isSubscribed": true,
+        "oldProperty": null
+      }
+    }
+    ```
+- `get_profile` - Retrieve a specific profile by ID
+  - Takes profileId as required parameter
+  - Returns full profile data from Unomi
+- `search_profiles` - Search for profiles
+  - Takes query string and optional limit/offset parameters
+  - Searches across firstName, lastName, and email fields
+- `create_scope` - Create a new Unomi scope
+  - Takes scope identifier and optional name/description
+  - Required for event tracking and profile updates
+  - Example:
+    ```json
+    {
+      "scope": "my-app",
+      "name": "My Application",
+      "description": "Scope for my application events"
+    }
+    ```
+
+### Scope Management
+The server automatically manages scopes for you:
+
+1. Default Scope:
+   - A default scope `claude-desktop` is used for all operations
+   - Created automatically when needed
+   - Used for profile updates and event tracking
+
+2. Custom Scopes:
+   - Can be created using the `create_scope` tool
+   - Useful for separating different applications or contexts
+   - Must exist before using in profile operations
+
+3. Automatic Scope Creation:
+   - The server checks if required scopes exist
+   - Creates them automatically if missing
+   - Uses meaningful defaults for scope metadata
+
+> **Note**: While scopes are created automatically when needed, you can still create them manually with custom names and descriptions using the `create_scope` tool.
 
 ## Overview
 
@@ -44,86 +136,6 @@ This MCP server enables Claude to maintain context about users through Apache Un
 - Proper security configuration
 - Required environment variables
 
-## Demo
-
-Watch how the MCP server enables Claude to maintain context and manage user profiles:
-
-[![Apache Unomi MCP Server Demo](https://img.youtube.com/vi/UTMbWqimk0M/0.jpg)](https://www.youtube.com/watch?v=UTMbWqimk0M)
-
-This demo showcases:
-- Profile management through Claude
-- Email-based user recognition
-- Context persistence across conversations
-- Property updates and retrieval
-- Seamless Claude Desktop integration
-
-## Features
-
-### Resources
-- List and access profiles via `unomi://profiles/list` URI
-- Each profile includes properties, segments, scores, and consents
-- JSON format for structured data access
-
-### Tools
-- `create_scope` - Create a new Unomi scope
-  - Takes scope identifier and optional name/description
-  - Required for event tracking and profile updates
-  - Example:
-    ```json
-    {
-      "scope": "my-app",
-      "name": "My Application",
-      "description": "Scope for my application events"
-    }
-    ```
-- `get_my_profile` - Get your profile using environment variables
-  - Uses UNOMI_PROFILE_ID from environment
-  - Automatically generates a session ID based on the current date
-  - Optional parameters:
-    - requireSegments: Include segment information
-    - requireScores: Include scoring information
-- `update_my_profile` - Update properties of your profile
-  - Uses UNOMI_PROFILE_ID from environment
-  - Takes a properties object with key-value pairs to update
-  - Supports string, number, boolean, and null values
-  - Example:
-    ```json
-    {
-      "properties": {
-        "firstName": "John",
-        "age": 30,
-        "isSubscribed": true,
-        "oldProperty": null
-      }
-    }
-    ```
-- `get_profile` - Retrieve a specific profile by ID
-  - Takes profileId as required parameter
-  - Returns full profile data from Unomi
-- `search_profiles` - Search for profiles
-  - Takes query string and optional limit/offset parameters
-  - Searches across firstName, lastName, and email fields
-
-### Scope Management
-The server automatically manages scopes for you:
-
-1. Default Scope:
-   - A default scope `claude-desktop` is used for all operations
-   - Created automatically when needed
-   - Used for profile updates and event tracking
-
-2. Custom Scopes:
-   - Can be created using the `create_scope` tool
-   - Useful for separating different applications or contexts
-   - Must exist before using in profile operations
-
-3. Automatic Scope Creation:
-   - The server checks if required scopes exist
-   - Creates them automatically if missing
-   - Uses meaningful defaults for scope metadata
-
-> **Note**: While scopes are created automatically when needed, you can still create them manually with custom names and descriptions using the `create_scope` tool.
-
 ## Configuration
 
 ### Environment Variables
@@ -160,22 +172,25 @@ The response will indicate which method was used via the `source` field:
 
 ### Unomi Server Configuration
 
-The `update_my_profile` tool uses protected events that require additional Unomi server configuration:
-
-1. Set up the Unomi key in your `etc/org.apache.unomi.cluster.cfg` file:
+1. Configure protected events in `etc/org.apache.unomi.cluster.cfg`:
    ```properties
+   # Required for protected events like property updates
    org.apache.unomi.cluster.authorization.key=your-unomi-key
-   ```
-
-2. Configure allowed IP addresses in `etc/org.apache.unomi.cluster.cfg`:
-   ```properties
+   
+   # Required to allow Claude Desktop to access Unomi
+   # Replace your-claude-desktop-ip with your actual IP
    org.apache.unomi.ip.ranges=127.0.0.1,::1,your-claude-desktop-ip
    ```
-   Replace `your-claude-desktop-ip` with your local machine's IP address where Claude Desktop is running.
+
+2. Ensure your Unomi server has CORS properly configured in `etc/org.apache.unomi.cors.cfg`:
+   ```properties
+   # Add your Claude Desktop origin if needed
+   org.apache.unomi.cors.allowed.origins=http://localhost:*
+   ```
 
 3. Restart Unomi server to apply changes
 
-> **Note**: The `update_my_profile` tool will not work unless both the Unomi key and IP address are properly configured.
+> **Important**: The Unomi key must match exactly between your server configuration and the UNOMI_KEY environment variable in Claude Desktop.
 
 ## Development
 
@@ -248,3 +263,67 @@ For example, if your profile ID is "user123" and today is March 15, 2024, the se
 ```
 user123-20240315
 ```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Protected Events Failing**
+   - Verify Unomi key matches exactly in both configurations
+   - Check IP address is correctly whitelisted
+   - Ensure scope exists before updating properties
+   - Verify CORS configuration if needed
+
+2. **Profile Not Found**
+   - Check if UNOMI_EMAIL is correctly set
+   - Verify email format is valid
+   - Ensure profile exists in Unomi
+   - Check if fallback UNOMI_PROFILE_ID is valid
+
+3. **Session Issues**
+   - Remember sessions are date-based
+   - Only one session per profile per day
+   - Check session ID format matches `profileId-YYYYMMDD`
+   - Verify scope exists for session
+
+4. **Connection Problems**
+   - Verify Unomi server is running
+   - Check network connectivity
+   - Ensure UNOMI_BASE_URL is correct
+   - Verify authentication credentials
+
+### Logs to Check
+
+1. **Claude Desktop Logs**:
+   ```bash
+   # MacOS
+   ~/Library/Logs/Claude/mcp*.log
+   
+   # Windows
+   %APPDATA%\Claude\mcp*.log
+   ```
+
+2. **Unomi Server Logs**:
+   ```bash
+   # Usually in
+   $UNOMI_HOME/logs/karaf.log
+   ```
+
+### Quick Fixes
+
+1. **Reset State**:
+   ```bash
+   # Stop Claude Desktop
+   # Clear logs
+   rm ~/Library/Logs/Claude/mcp*.log
+   # Restart Claude Desktop
+   ```
+
+2. **Verify Configuration**:
+   ```bash
+   # Check Unomi connection
+   curl -u username:password http://your-unomi-server:8181/cxs/cluster
+   
+   # Test scope exists
+   curl -u username:password http://your-unomi-server:8181/cxs/scopes/claude-desktop
+   ```
