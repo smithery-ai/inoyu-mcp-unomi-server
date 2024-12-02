@@ -1,12 +1,61 @@
 # Apache Unomi MCP Server
 
-A Model Context Protocol server for Apache Unomi
+A Model Context Protocol server that provides seamless integration between Claude Desktop and Apache Unomi, enabling profile management and context-aware interactions.
 
-This is a TypeScript-based MCP server that provides access to Apache Unomi profile data. It implements core MCP concepts by providing:
+## Overview
 
-- Resources representing Unomi profiles with URIs and metadata
-- Tools for retrieving and searching profiles
-- Full integration with Apache Unomi's REST API
+This MCP server enables Claude to maintain context about users through Apache Unomi's profile management system. Here's what you can achieve with it:
+
+### Key Capabilities
+1. **User Recognition**:
+   - Identify users across conversations using email or profile ID
+   - Maintain consistent user context between sessions
+   - Automatically create and manage user profiles
+
+2. **Context Management**:
+   - Store and retrieve user preferences
+   - Track user segments and scores
+   - Maintain conversation history and user properties
+
+3. **Integration Features**:
+   - Seamless Claude Desktop integration
+   - Protected event handling
+   - Automatic session management
+   - Scope-based context isolation
+
+### What You Can Do
+- Have Claude remember user preferences across conversations
+- Store and retrieve user-specific information
+- Track user interactions and behavior
+- Maintain consistent user context
+- Manage multiple users through email identification
+
+### What You Cannot Do
+- Create multiple sessions per day for the same profile
+- Modify protected events without proper Unomi key
+- Access profiles outside IP whitelist
+- Create custom session IDs (they're date-based)
+- Bypass Unomi's security mechanisms
+
+### Prerequisites
+- Running Apache Unomi server
+- Claude Desktop installation
+- Network access to Unomi server
+- Proper security configuration
+- Required environment variables
+
+## Demo
+
+Watch how the MCP server enables Claude to maintain context and manage user profiles:
+
+[![Apache Unomi MCP Server Demo](https://img.youtube.com/vi/UTMbWqimk0M/0.jpg)](https://www.youtube.com/watch?v=UTMbWqimk0M)
+
+This demo showcases:
+- Profile management through Claude
+- Email-based user recognition
+- Context persistence across conversations
+- Property updates and retrieval
+- Seamless Claude Desktop integration
 
 ## Features
 
