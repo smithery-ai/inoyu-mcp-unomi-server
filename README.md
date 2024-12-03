@@ -212,58 +212,6 @@ The response will indicate which method was used via the `source` field:
 
 > **Important**: The Unomi key must match exactly between your server configuration and the UNOMI_KEY environment variable in Claude Desktop.
 
-## Development
-
-Install dependencies:
-```bash
-npm install
-```
-
-Build the server:
-```bash
-npm run build
-```
-
-For development with auto-rebuild:
-```bash
-npm run watch
-```
-
-## Installation
-
-### Option 1: Using NPX (Recommended)
-
-You can run the server directly using NPX:
-
-```bash
-npx @inoyu/mcp-unomi-server
-```
-
-Or install it globally:
-
-```bash
-npm install -g @inoyu/mcp-unomi-server
-mcp-unomi-server
-```
-
-### Option 2: Manual Installation
-
-1. Clone the repository:
-   ```bash
-   git clone [repository-url]
-   cd mcp-unomi-server
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Build the server:
-   ```bash
-   npm run build
-   ```
-
 ## Configuration
 
 ### Environment Variables
@@ -427,7 +375,8 @@ user123-20240315
    # Test scope exists
    curl -u username:password http://your-unomi-server:8181/cxs/scopes/claude-desktop
    ```
-### Claude Desktop Configuration
+
+### Claude Desktop Configuration options
 
 1. Create or edit your Claude Desktop configuration:
    - MacOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
