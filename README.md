@@ -26,6 +26,37 @@ Watch how the MCP server enables Claude to maintain context and manage user prof
 
 [![Apache Unomi MCP Server Demo](https://img.youtube.com/vi/YqPkUhBlcrs/0.jpg)](https://www.youtube.com/watch?v=YqPkUhBlcrs)
 
+## Installation
+
+To use with Claude Desktop, add the server config and environment variables:
+
+On MacOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "unomi-server": {
+      "command": "npx",
+      "args": ["@inoyu/mcp-unomi-server"],
+      "env": {
+        "UNOMI_BASE_URL": "http://your-unomi-server:8181",
+        "UNOMI_USERNAME": "your-username", // by default Apache Unomi uses karaf  
+        "UNOMI_PASSWORD": "your-password", // by default Apache Unomi uses karaf
+        "UNOMI_PROFILE_ID": "your-profile-id",
+        "UNOMI_KEY": "your-unomi-key", // by default Apache Unomi uses 670c26d1cc413346c3b2fd9ce65dab41
+        "UNOMI_EMAIL": "your-email@example.com",
+        "UNOMI_SOURCE_ID": "claude-desktop"
+      }
+    }
+  }
+}
+```
+
+The `env` section in the configuration allows you to set the required environment variables for the server. Replace the values with your actual Unomi server details.
+
+Make sure to restart Claude Desktop after updating the configuration. You can then click on the tools icon on the lower right of the chat window to make sure it has found all the tools provided by this server.
+
 ## Features
 
 ### Profile Access
@@ -306,35 +337,6 @@ For development with auto-rebuild:
 npm run watch
 ```
 
-## Installation
-
-To use with Claude Desktop, add the server config and environment variables:
-
-On MacOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "unomi-server": {
-      "command": "npx",
-      "args": ["@inoyu/mcp-unomi-server"],
-      "env": {
-        "UNOMI_BASE_URL": "http://your-unomi-server:8181",
-        "UNOMI_USERNAME": "your-username",
-        "UNOMI_PASSWORD": "your-password",
-        "UNOMI_PROFILE_ID": "your-profile-id",
-        "UNOMI_KEY": "your-unomi-key",
-        "UNOMI_EMAIL": "your-email@example.com",
-        "UNOMI_SOURCE_ID": "claude-desktop"
-      }
-    }
-  }
-}
-```
-
-The `env` section in the configuration allows you to set the required environment variables for the server. Replace the values with your actual Unomi server details.
-
 ### Debugging
 
 Since MCP servers communicate over stdio, debugging can be challenging. We recommend using the [MCP Inspector](https://github.com/modelcontextprotocol/inspector), which is available as a package script:
@@ -425,7 +427,6 @@ user123-20240315
    # Test scope exists
    curl -u username:password http://your-unomi-server:8181/cxs/scopes/claude-desktop
    ```
-
 ### Claude Desktop Configuration
 
 1. Create or edit your Claude Desktop configuration:
@@ -484,3 +485,4 @@ For development or local installations:
   }
 }
 ```
+
