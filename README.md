@@ -200,6 +200,114 @@ npm run watch
 
 ## Installation
 
+### Option 1: Using NPX (Recommended)
+
+You can run the server directly using NPX:
+
+```bash
+npx @inoyu/mcp-unomi-server
+```
+
+Or install it globally:
+
+```bash
+npm install -g @inoyu/mcp-unomi-server
+mcp-unomi-server
+```
+
+### Option 2: Manual Installation
+
+1. Clone the repository:
+   ```bash
+   git clone [repository-url]
+   cd mcp-unomi-server
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Build the server:
+   ```bash
+   npm run build
+   ```
+
+## Configuration
+
+### Environment Variables
+
+The server requires the following environment variables:
+
+```bash
+UNOMI_BASE_URL=http://your-unomi-server:8181
+UNOMI_USERNAME=your-username
+UNOMI_PASSWORD=your-password
+UNOMI_PROFILE_ID=your-profile-id
+UNOMI_SOURCE_ID=your-source-id
+UNOMI_KEY=your-unomi-key
+UNOMI_EMAIL=your-email
+```
+
+### Profile Resolution
+
+The server uses a two-step process to resolve the profile ID:
+
+1. Email Lookup (if `UNOMI_EMAIL` is set):
+   - Searches for a profile with matching email
+   - If found, uses that profile's ID
+   - Useful for maintaining consistent profile across sessions
+
+2. Fallback Profile ID:
+   - If email lookup fails or `UNOMI_EMAIL` is not set
+   - Uses the `UNOMI_PROFILE_ID` from environment
+   - Ensures a profile is always available
+
+The response will indicate which method was used via the `source` field:
+- `"email_lookup"`: Profile found via email
+- `"environment"`: Using fallback profile ID
+
+### Unomi Server Configuration
+
+1. Configure protected events in `etc/org.apache.unomi.cluster.cfg`:
+   ```properties
+   # Required for protected events like property updates
+   org.apache.unomi.cluster.authorization.key=your-unomi-key
+   
+   # Required to allow Claude Desktop to access Unomi
+   # Replace your-claude-desktop-ip with your actual IP
+   org.apache.unomi.ip.ranges=127.0.0.1,::1,your-claude-desktop-ip
+   ```
+
+2. Ensure your Unomi server has CORS properly configured in `etc/org.apache.unomi.cors.cfg`:
+   ```properties
+   # Add your Claude Desktop origin if needed
+   org.apache.unomi.cors.allowed.origins=http://localhost:*
+   ```
+
+3. Restart Unomi server to apply changes
+
+> **Important**: The Unomi key must match exactly between your server configuration and the UNOMI_KEY environment variable in Claude Desktop.
+
+## Development
+
+Install dependencies:
+```bash
+npm install
+```
+
+Build the server:
+```bash
+npm run build
+```
+
+For development with auto-rebuild:
+```bash
+npm run watch
+```
+
+## Installation
+
 To use with Claude Desktop, add the server config and environment variables:
 
 On MacOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
