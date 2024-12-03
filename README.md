@@ -317,15 +317,16 @@ On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 {
   "mcpServers": {
     "unomi-server": {
-      "command": "/path/to/unomi-server/build/index.js",
+      "command": "npx",
+      "args": ["@inoyu/mcp-unomi-server"],
       "env": {
         "UNOMI_BASE_URL": "http://your-unomi-server:8181",
         "UNOMI_USERNAME": "your-username",
         "UNOMI_PASSWORD": "your-password",
         "UNOMI_PROFILE_ID": "your-profile-id",
-        "UNOMI_SOURCE_ID": "claude-desktop",
         "UNOMI_KEY": "your-unomi-key",
-        "UNOMI_EMAIL": "your-email@example.com"
+        "UNOMI_EMAIL": "your-email@example.com",
+        "UNOMI_SOURCE_ID": "claude-desktop"
       }
     }
   }
@@ -424,3 +425,62 @@ user123-20240315
    # Test scope exists
    curl -u username:password http://your-unomi-server:8181/cxs/scopes/claude-desktop
    ```
+
+### Claude Desktop Configuration
+
+1. Create or edit your Claude Desktop configuration:
+   - MacOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%/Claude/claude_desktop_config.json`
+
+2. Add the server configuration using NPX:
+   ```json
+   {
+     "mcpServers": {
+       "unomi-server": {
+         "command": "npx",
+         "args": ["@inoyu/mcp-unomi-server"],
+         "env": {
+           "UNOMI_BASE_URL": "http://your-unomi-server:8181",
+           "UNOMI_USERNAME": "your-username",
+           "UNOMI_PASSWORD": "your-password",
+           "UNOMI_PROFILE_ID": "your-profile-id",
+           "UNOMI_KEY": "your-unomi-key",
+           "UNOMI_EMAIL": "your-email@example.com",
+           "UNOMI_SOURCE_ID": "claude-desktop"
+         }
+       }
+     }
+   }
+   ```
+
+> **Note**: Using NPX ensures you're always running the latest published version of the server.
+
+Alternatively, if you want to use a specific version:
+```json
+{
+  "mcpServers": {
+    "unomi-server": {
+      "command": "npx",
+      "args": ["@inoyu/mcp-unomi-server@0.1.0"],
+      "env": {
+        // ... environment variables ...
+      }
+    }
+  }
+}
+```
+
+For development or local installations:
+```json
+{
+  "mcpServers": {
+    "unomi-server": {
+      "command": "node",
+      "args": ["/path/to/local/mcp-unomi-server/build/index.js"],
+      "env": {
+        // ... environment variables ...
+      }
+    }
+  }
+}
+```
